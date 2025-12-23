@@ -1,4 +1,11 @@
 #!/bin/bash
+# =================================================================
+# Script Name: install_comfyui.sh
+# Description: DGX Spark 环境  ComfyUI 一键部署脚本
+# Version:     v2.1 
+# Author:      昌国庆 (Leadtek)
+# Date:        2025-12-23
+# =================================================================
 
 # 设置项目路径
 PROJECT_DIR="$HOME/ComfyUI"  # 用户的主目录下的 ComfyUI 项目路径

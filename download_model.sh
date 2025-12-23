@@ -1,5 +1,11 @@
 #!/bin/bash
-
+# =================================================================
+# Script Name: download_model.sh
+# Description: DGX Spark 环境 ComfyUI 下载模型文件脚本
+# Version:     v2.1 
+# Author:      昌国庆 (Leadtek)
+# Date:        2025-12-23
+# =================================================================
 # 检查是否提供了下载链接和目标文件夹路径
 if [ $# -ne 2 ]; then
     echo "Usage: $0 <download_url> <target_folder>"

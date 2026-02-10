@@ -3,30 +3,26 @@
 # Script Name: download_model.sh
 # Description: DGX Spark 环境 ComfyUI 智能模型下载工具
 #              集成路径自动映射与错误修正功能
-# Version:     v2.2 (Auto-Map & Fix)
+# Version:     v3.0 (Smart Map & Dynamic Create)
 # Author:      昌国庆 (Leadtek)
-# Date:        2025-12-24
+# Date:        2026-02-10
 # =================================================================
 
-# --- 1. 定义帮助信息 ---
+
+
 function show_usage {
     echo "================================================================"
-    echo "Usage: $0 <下载链接> <模型类型 或 目标路径>"
+    echo "用法: $0 <下载链接> <类别代码 或 文件夹名称>"
     echo "----------------------------------------------------------------"
-    echo "参数 2 推荐使用以下【类型代码】，脚本会自动定位路径："
-    echo "  ckpt   -> 主模型 (models/checkpoints)"
-    echo "  lora   -> LoRA模型 (models/loras)"
-    echo "  cv     -> Clip Vision (models/clip_vision)"
-    echo "  vae    -> VAE模型 (models/vae)"
-    echo "  cn     -> ControlNet (models/controlnet)"
-    echo "  unet   -> UNET模型 (models/unet)"
-    echo "----------------------------------------------------------------"
-    echo "示例 (下载 Clip Vision):"
-    echo "$0 https://huggingface.co/.../model.safetensors cv"
+    echo "1. 快捷代码示例 (自动映射):"
+    echo "   ckpt -> models/checkpoints | lora -> models/loras"
+    echo "   vae  -> models/vae         | cn   -> models/controlnet"
+    echo "2. 自定义名称示例 (自动创建):"
+    echo "   $0 <URL> insightface  --> 下载到 models/insightface/"
+    echo "   $0 <URL> my_folder    --> 下载到 models/my_folder/"
     echo "================================================================"
 }
 
-# 检查参数数量
 if [ $# -ne 2 ]; then
     show_usage
     exit 1
@@ -36,14 +32,11 @@ DOWNLOAD_URL=$1
 INPUT_PARAM=$2
 PROJECT_DIR="$(pwd)"
 
-# --- 2. 核心逻辑：路径解析与智能修正 ---
-
-# 将输入转换为小写，方便匹配
+# --- 1. 核心逻辑：智能路径解析 ---
 INPUT_LOWER=$(echo "$INPUT_PARAM" | tr '[:upper:]' '[:lower:]')
 
 case "$INPUT_LOWER" in
-    # --- 场景 A: 用户输入了正确的类型代码 (推荐) ---
-    "ckpt" | "checkpoint" | "checkpoints" | "diffusion")
+    "ckpt" | "checkpoint" | "checkpoints")
         TARGET_REL_PATH="models/checkpoints"
         ;;
     "lora" | "loras")
@@ -58,64 +51,61 @@ case "$INPUT_LOWER" in
     "cn" | "controlnet")
         TARGET_REL_PATH="models/controlnet"
         ;;
-    "unet")
+    "unet" | "diffusion")
         TARGET_REL_PATH="models/unet"
         ;;
     "upscale" | "esrgan")
         TARGET_REL_PATH="models/upscale_models"
         ;;
-    
-    # --- 场景 B: 用户输入了自定义路径 (包含容错处理) ---
     *)
-        # 错误检测：如果用户把文件名 (如 .safetensors) 也复制到了路径参数中
-        if [[ "$INPUT_PARAM" == *".safetensors"* ]] || [[ "$INPUT_PARAM" == *".pth"* ]] || [[ "$INPUT_PARAM" == *".bin"* ]]; then
-            echo "⚠️  检测到路径参数包含了文件名，正在自动修正..."
-            # 使用 dirname 去掉文件名，只保留目录部分
-            # 例如: models/clip_vision/file.safetensors -> models/clip_vision
-            TARGET_REL_PATH=$(dirname "$INPUT_PARAM")
-        else
-            # 用户输入的是正常的自定义文件夹
+        # 场景：用户输入的是自定义类别或文件夹名
+        # 移除可能误输入的路径斜杠和文件名后缀
+        CLEAN_PARAM=$(echo "$INPUT_PARAM" | sed 's/\///g' | sed 's/\.safetensors//g' | sed 's/\.pth//g')
+        
+        # 检查是否已经是 models/ 开头的路径
+        if [[ "$INPUT_PARAM" == "models/"* ]]; then
             TARGET_REL_PATH="$INPUT_PARAM"
+        else
+            TARGET_REL_PATH="models/$CLEAN_PARAM"
         fi
         ;;
 esac
 
-# --- 3. 构建与验证路径 ---
-
+# --- 2. 目录准备 ---
 MODEL_SAVE_DIR="$PROJECT_DIR/$TARGET_REL_PATH"
 
-# 安全检查：防止目标目录恰好是一个已存在的文件
 if [ -f "$MODEL_SAVE_DIR" ]; then
-    echo "❌ 错误: 目标路径 $MODEL_SAVE_DIR 是一个文件，无法创建为目录！"
+    echo "❌ 错误: $MODEL_SAVE_DIR 是一个文件，无法作为目录使用。"
     exit 1
 fi
 
-# 创建目录
 if [ ! -d "$MODEL_SAVE_DIR" ]; then
-    echo "📁 正在创建目录: $TARGET_REL_PATH"
+    echo "📁 目录不存在，正在自动创建: $TARGET_REL_PATH"
     mkdir -p "$MODEL_SAVE_DIR"
 fi
 
-# --- 4. 执行下载 ---
-
-FILE_NAME=$(basename "$DOWNLOAD_URL")
+# --- 3. 文件名处理 (处理带参数的 URL) ---
+# 提取文件名并去除 URL 问号后的参数
+FILE_NAME=$(basename "${DOWNLOAD_URL%%\?*}")
 SAVE_PATH="$MODEL_SAVE_DIR/$FILE_NAME"
 
+# --- 4. 执行下载 ---
 echo "----------------------------------------------------------------"
-echo "任务确认:"
+echo "🚀 正在下载..."
 echo "🔗 来源: $DOWNLOAD_URL"
 echo "📂 目标: $TARGET_REL_PATH/"
 echo "📄 文件: $FILE_NAME"
 echo "----------------------------------------------------------------"
 
-# wget 参数说明：-c 断点续传, -P 指定目录 (虽然我们拼接了完整路径，但 -O 更稳妥)
 wget --continue --progress=bar:force "$DOWNLOAD_URL" -O "$SAVE_PATH"
 
 # --- 5. 结果校验 ---
 if [ $? -eq 0 ]; then
-    echo "✅ 下载成功！模型已就绪。"
-    echo "📍 物理路径: $SAVE_PATH"
+    echo "----------------------------------------------------------------"
+    echo "✅ 下载成功！"
+    echo "📍 路径: $SAVE_PATH"
 else
-    echo "❌ 下载失败，请检查网络或链接有效性。"
+    echo "❌ 下载失败，请检查网络或链接是否有效。"
+    # 如果下载失败且文件夹是空的，可以考虑删除它（可选）
     exit 1
 fi
